@@ -1,0 +1,154 @@
+groups:
+
+# ─────────────────────────────────────────────────────────────
+# CRITICAL — pipeline broken or about to break
+# ─────────────────────────────────────────────────────────────
+- name: pipeline-critical
+  interval: 30s
+  rules:
+
+  - alert: PipelineStalled
+    # No Hudi commit for 5+ min means Spark is stuck or dead
+    expr: pipeline_hudi_last_commit_age_seconds > 300
+    for: 2m
+    labels:
+      severity: critical
+      component: spark
+    annotations:
+      summary: "Hudi pipeline stalled — no commit in {{ humanizeDuration $value }}"
+      description: "Spark has not committed to Hudi for over 5 minutes. Check Spark driver logs and Kafka source."
+
+  - alert: DebeziumConnectorDown
+    expr: pipeline_debezium_connector_running == 0
+    for: 1m
+    labels:
+      severity: critical
+      component: debezium
+    annotations:
+      summary: "Debezium connector not RUNNING"
+      description: "No new MySQL changes are reaching Kafka. Restart the connector."
+
+  - alert: DebeziumTaskFailed
+    # Connector appears running but task has crashed
+    expr: pipeline_debezium_task_running == 0 and pipeline_debezium_connector_running == 1
+    for: 1m
+    labels:
+      severity: critical
+      component: debezium
+    annotations:
+      summary: "Debezium task has failed"
+      description: "The CDC task inside the connector has crashed. Manual restart required."
+
+  - alert: MySQLUnreachable
+    expr: pipeline_mysql_reachable == 0
+    for: 1m
+    labels:
+      severity: critical
+      component: mysql
+    annotations:
+      summary: "MySQL unreachable"
+      description: "Source DB is down."
+
+  - alert: HudiInflightOpsStuck
+    # Too many .inflight markers with no completion
+    expr: pipeline_hudi_inflight_operations > 5
+    for: 5m
+    labels:
+      severity: critical
+      component: hudi
+    annotations:
+      summary: "{{ $value }} Hudi ops stuck in-flight"
+      description: "Commits may be failing. Check Spark executor logs for OOM or S3 errors."
+
+  - alert: ConsumerLagExploding
+    # At 50k/s producer, 10M lag = ~3 minutes behind — unacceptable
+    expr: pipeline_spark_consumer_lag_total > 10000000
+    for: 2m
+    labels:
+      severity: critical
+      component: spark
+    annotations:
+      summary: "Consumer lag > 10M messages"
+      description: "Spark cannot keep up. Current lag: {{ $value }} messages."
+
+# ─────────────────────────────────────────────────────────────
+# WARNING — early signals of problems
+# ─────────────────────────────────────────────────────────────
+- name: pipeline-warning
+  interval: 30s
+  rules:
+
+  - alert: ConsumerLagGrowing
+    # Lag stable above 1M for 3 min = consumer slightly slower than producer
+    expr: pipeline_spark_consumer_lag_total > 1000000
+    for: 3m
+    labels:
+      severity: warning
+      component: spark
+    annotations:
+      summary: "Consumer lag > 1M messages"
+      description: "Spark is falling slightly behind producer. Monitor for escalation."
+
+  - alert: ProducerConsumerRateDivergence
+    # Producer outpacing consumer by > 10k/s for 3 min
+    expr: rate(pipeline_spark_consumer_lag_total[2m]) > 10000
+    for: 3m
+    labels:
+      severity: warning
+      component: spark
+    annotations:
+      summary: "Producer outpacing consumer"
+      description: "Lag is growing at {{ $value }} messages/sec. Scale consumer or throttle producer."
+
+  - alert: CompactionLagging
+    expr: pipeline_hudi_log_files_total > 50 and on() pipeline_hudi_commit_count < 1
+    for: 5m
+    labels:
+      severity: warning
+      component: hudi
+    annotations:
+      summary: "{{ $value }} log files accumulated with no compaction"
+      description: "Compaction is not running or is slow. Query performance will degrade."
+
+  - alert: KafkaIngestionStalled
+    expr: increase(pipeline_kafka_topic_latest_offset[5m]) == 0
+    for: 5m
+    labels:
+      severity: warning
+      component: kafka
+    annotations:
+      summary: "No new Kafka messages in 5 minutes"
+      description: "Either producer stopped or Kafka is blocked."
+
+  - alert: HudiTableGrowingFast
+    # >5 GB in 10 min = cleaner not working
+    expr: increase(pipeline_hudi_table_size_bytes[10m]) > 5368709120
+    for: 10m
+    labels:
+      severity: warning
+      component: hudi
+    annotations:
+      summary: "Hudi table grew by > 5GB in 10 min"
+      description: "Cleaner may not be running. Check cleaner commits count."
+
+  - alert: SparkBatchOverrun
+    # Batch took > 2x trigger interval
+    expr: |
+      {__name__=~"metrics_app_.*_driver_spark_streaming_.*_triggerExecution_Value"} > 60000
+    for: 2m
+    labels:
+      severity: warning
+      component: spark
+    annotations:
+      summary: "Spark batch took > 60s"
+      description: "Batch duration exceeded 2x the 30s trigger. Pipeline will fall behind."
+
+  - alert: ExporterScrapeErrors
+    expr: increase(pipeline_exporter_scrape_errors_total[5m]) > 10
+    for: 5m
+    labels:
+      severity: warning
+      component: monitoring
+    annotations:
+      summary: "Pipeline exporter failing"
+      description: "More than 10 scrape errors in 5 min. Monitoring may be unreliable."

@@ -1,0 +1,32 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  # Our custom pipeline exporter
+  - job_name: pipeline-exporter
+    static_configs:
+      - targets: ['pipeline-exporter:9200']
+
+  # Prometheus itself
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Spark Master — master cluster metrics (workers, apps)
+  - job_name: spark-master
+    metrics_path: /metrics/master/prometheus
+    static_configs:
+      - targets: ['spark-master:8080']
+
+  # Spark Application driver — streaming, executor, JVM metrics
+  # This endpoint only exists while an application is running (port 4040)
+  - job_name: spark-driver
+    metrics_path: /metrics/prometheus
+    static_configs:
+      - targets: ['spark-master:4040']
+    # Don't fail if the driver isn't up
+    honor_labels: true

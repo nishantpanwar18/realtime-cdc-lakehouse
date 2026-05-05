@@ -1,0 +1,30 @@
+# Environment overrides (may contain real secrets)
+.env
+.env.local
+.env.production
+.env.staging
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Docker
+*.log
+docker-compose.override.yml
+
+# Kiro
+.kiro/
+
+# OS
+Thumbs.db
+.DS_Store

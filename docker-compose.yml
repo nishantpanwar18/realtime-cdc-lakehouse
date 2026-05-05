@@ -1,0 +1,292 @@
+services:
+
+  # ── MySQL — Source transactional DB ─────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: lakehouse-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    command:
+      - --server-id=1
+      - --log-bin=mysql-bin
+      - --binlog-format=ROW
+      - --binlog-row-image=FULL
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
+    volumes:
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - lakehouse-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpass"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # ── Kafka (Redpanda) — CDC event broker ─────────────────────
+  kafka:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.1
+    container_name: lakehouse-kafka
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=1G
+      - --overprovisioned
+      - --kafka-addr=internal://0.0.0.0:29092,external://0.0.0.0:9092
+      - --advertise-kafka-addr=internal://kafka:29092,external://localhost:9092
+    ports:
+      - "9092:9092"
+    networks:
+      - lakehouse-net
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  kafka-ui:
+    image: docker.redpanda.com/redpandadata/console:v2.4.5
+    container_name: lakehouse-kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_BROKERS: kafka:29092
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - lakehouse-net
+
+  # ── Debezium — CDC connector ────────────────────────────────
+  debezium:
+    image: debezium/connect:2.5
+    container_name: lakehouse-debezium
+    ports:
+      - "8083:8083"
+    environment:
+      GROUP_ID: 1
+      CONFIG_STORAGE_TOPIC: debezium_configs
+      OFFSET_STORAGE_TOPIC: debezium_offsets
+      STATUS_STORAGE_TOPIC: debezium_statuses
+      BOOTSTRAP_SERVERS: kafka:29092
+      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - lakehouse-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/connectors"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  # ── MinIO — S3-compatible storage for Hudi ──────────────────
+  minio:
+    image: minio/minio:RELEASE.2024-01-31T20-20-33Z
+    container_name: lakehouse-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    command: server /data --console-address ":9001"
+    networks:
+      - lakehouse-net
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local", "--insecure"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio-setup:
+    image: minio/mc:latest
+    container_name: lakehouse-minio-setup
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${S3_ACCESS_KEY} ${S3_SECRET_KEY};
+      mc mb local/${S3_BUCKET} --ignore-existing;
+      echo 'Bucket ready';
+      "
+    networks:
+      - lakehouse-net
+
+  # ── Hive Metastore — table catalog ──────────────────────────
+  hive-metastore:
+    build: ./hive-metastore
+    platform: linux/amd64
+    container_name: lakehouse-hms
+    environment:
+      - SERVICE_NAME=metastore
+      - DB_DRIVER=derby
+      - SERVICE_OPTS=-Djavax.jdo.option.ConnectionDriverName=org.apache.derby.jdbc.EmbeddedDriver -Djavax.jdo.option.ConnectionURL=jdbc:derby:;databaseName=/tmp/metastore_db;create=true
+      - HADOOP_HEAPSIZE=1024
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=password
+      - HADOOP_CONF_DIR=/opt/hive/conf
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+    ports:
+      - "9083:9083"
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - lakehouse-net
+
+  # ── Spark — 1 master + 4 workers (8 cores / 24 GB) ─────────
+  spark-master:
+    build: ./spark
+    container_name: lakehouse-spark-master
+    hostname: spark-master
+    environment:
+      - SPARK_MODE=master
+    ports:
+      - "7077:7077"
+      - "8181:8080"
+      - "4040:4040"
+    networks:
+      - lakehouse-net
+    volumes:
+      - ./jobs:/opt/spark/jobs
+
+  spark-worker: &spark-worker
+    build: ./spark
+    container_name: lakehouse-spark-worker
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=6G
+      - SPARK_WORKER_CORES=2
+    ports:
+      - "8081:8081"
+    depends_on:
+      - spark-master
+    networks:
+      - lakehouse-net
+    volumes:
+      - ./jobs:/opt/spark/jobs
+
+  spark-worker-2:
+    <<: *spark-worker
+    container_name: lakehouse-spark-worker-2
+    ports: ["8084:8081"]
+
+  spark-worker-3:
+    <<: *spark-worker
+    container_name: lakehouse-spark-worker-3
+    ports: ["8085:8081"]
+
+  spark-worker-4:
+    <<: *spark-worker
+    container_name: lakehouse-spark-worker-4
+    ports: ["8086:8081"]
+
+  # ── Trino — SQL query engine ────────────────────────────────
+  trino:
+    image: trinodb/trino:439
+    container_name: lakehouse-trino
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog
+    depends_on:
+      - hive-metastore
+    networks:
+      - lakehouse-net
+
+  # ── Pipeline Exporter — custom Prometheus metrics ───────────
+  pipeline-exporter:
+    build: ./observability/exporter
+    container_name: lakehouse-exporter
+    environment:
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_TOPIC: shipments.shipments_db.shipments
+      DEBEZIUM_URL: http://debezium:8083
+      DEBEZIUM_CONNECTOR: shipments-connector
+      MYSQL_HOST: mysql
+      MYSQL_USER: root
+      MYSQL_PASSWORD: rootpass
+      S3_ENDPOINT: http://minio:9000
+      S3_KEY: admin
+      S3_SECRET: password
+      S3_BUCKET: lakehouse
+      HUDI_PREFIX: data/shipments_mor
+      HUDI_CHECKPOINT_PREFIX: checkpoints/shipments_mor
+      SCRAPE_INTERVAL: "15"
+    ports:
+      - "9200:9200"
+    depends_on:
+      - kafka
+      - mysql
+      - minio
+    networks:
+      - lakehouse-net
+
+  # ── Prometheus — metrics storage + alert rules ──────────────
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: lakehouse-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./observability/prometheus/rules:/etc/prometheus/rules
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle
+    networks:
+      - lakehouse-net
+
+  # ── Grafana — dashboards + alerting ─────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: lakehouse-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning
+      - ./observability/grafana/dashboards:/etc/grafana/dashboards
+    depends_on:
+      - prometheus
+    networks:
+      - lakehouse-net
+
+  # ── Init — registers Debezium connector ─────────────────────
+  init:
+    image: curlimages/curl:latest
+    container_name: lakehouse-init
+    depends_on:
+      debezium:
+        condition: service_healthy
+    volumes:
+      - ./debezium:/config
+      - ./scripts:/scripts
+    entrypoint: ["sh", "/scripts/wait-and-register.sh"]
+    networks:
+      - lakehouse-net
+
+networks:
+  lakehouse-net:

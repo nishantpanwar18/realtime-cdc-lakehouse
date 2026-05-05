@@ -1,0 +1,27 @@
+{
+  "name": "shipments-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.mysql.MySqlConnector",
+    "tasks.max": "1",
+
+    "database.hostname": "mysql",
+    "database.port": "3306",
+    "database.user": "debezium",
+    "database.password": "debezium",
+    "database.server.id": "1",
+
+    "topic.prefix": "shipments",
+    "database.include.list": "shipments_db",
+    "table.include.list": "shipments_db.shipments",
+
+    "schema.history.internal.kafka.bootstrap.servers": "kafka:29092",
+    "schema.history.internal.kafka.topic": "schema-changes.shipments",
+
+    "include.schema.changes": "true",
+    "transforms": "unwrap",
+    "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+    "transforms.unwrap.drop.tombstones": "false",
+    "transforms.unwrap.delete.handling.mode": "rewrite",
+    "transforms.unwrap.add.fields": "op,table,source.ts_ms"
+  }
+}

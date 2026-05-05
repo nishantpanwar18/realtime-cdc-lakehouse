@@ -1,0 +1,390 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "title": "Shipments CDC Pipeline",
+  "uid": "pipeline-overview",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "15s",
+  "time": {"from": "now-30m", "to": "now"},
+  "panels": [
+
+    {
+      "type": "row",
+      "id": 1,
+      "title": "🚦 Red Lights (component status)",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Debezium",
+      "description": "CDC connector state. Down = no new MySQL changes reaching Kafka.",
+      "gridPos": {"h": 4, "w": 5, "x": 0, "y": 1},
+      "targets": [{"expr": "pipeline_debezium_connector_running", "refId": "A"}],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{"type": "value", "options": {
+            "0": {"text": "DOWN", "color": "red"},
+            "1": {"text": "RUNNING", "color": "green"}
+          }}],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red"}, {"color": "green", "value": 1}]},
+          "color": {"mode": "thresholds"}
+        }
+      },
+      "options": {"colorMode": "background", "graphMode": "none"}
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "MySQL",
+      "description": "Source DB reachable.",
+      "gridPos": {"h": 4, "w": 5, "x": 5, "y": 1},
+      "targets": [{"expr": "pipeline_mysql_reachable", "refId": "A"}],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{"type": "value", "options": {
+            "0": {"text": "DOWN", "color": "red"},
+            "1": {"text": "OK", "color": "green"}
+          }}],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red"}, {"color": "green", "value": 1}]},
+          "color": {"mode": "thresholds"}
+        }
+      },
+      "options": {"colorMode": "background", "graphMode": "none"}
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Spark Commit Age",
+      "description": "Seconds since Spark last committed to Hudi. High = Spark stalled.",
+      "gridPos": {"h": 4, "w": 5, "x": 10, "y": 1},
+      "targets": [{"expr": "pipeline_hudi_last_commit_age_seconds", "refId": "A"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green"},
+            {"color": "yellow", "value": 90},
+            {"color": "red", "value": 300}
+          ]},
+          "color": {"mode": "thresholds"}
+        }
+      },
+      "options": {"colorMode": "background", "graphMode": "area"}
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Inflight Ops",
+      "description": "Hudi operations not yet committed. Stuck ops signal a problem.",
+      "gridPos": {"h": 4, "w": 4, "x": 15, "y": 1},
+      "targets": [{"expr": "pipeline_hudi_inflight_operations", "refId": "A"}],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green"},
+            {"color": "yellow", "value": 3},
+            {"color": "red", "value": 5}
+          ]},
+          "color": {"mode": "thresholds"}
+        }
+      },
+      "options": {"colorMode": "background", "graphMode": "none"}
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Exporter",
+      "description": "Pipeline exporter scrape errors rate. Zero = monitoring healthy.",
+      "gridPos": {"h": 4, "w": 5, "x": 19, "y": 1},
+      "targets": [{"expr": "increase(pipeline_exporter_scrape_errors_total[5m])", "refId": "A"}],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green"},
+            {"color": "yellow", "value": 3},
+            {"color": "red", "value": 10}
+          ]},
+          "color": {"mode": "thresholds"}
+        }
+      },
+      "options": {"colorMode": "background", "graphMode": "none"}
+    },
+
+    {
+      "type": "row",
+      "id": 2,
+      "title": "📊 Key Numbers",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5}
+    },
+    {
+      "id": 20,
+      "type": "stat",
+      "title": "Producer Rate",
+      "description": "Messages/sec written to Kafka.",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 6},
+      "targets": [{"expr": "rate(pipeline_kafka_topic_latest_offset[1m])", "refId": "A"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {"mode": "fixed", "fixedColor": "#73BF69"}
+        }
+      },
+      "options": {"colorMode": "background", "graphMode": "area", "textMode": "value"}
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "Consumer Rate",
+      "description": "Messages/sec Spark is consuming (producer rate minus lag growth).",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 6},
+      "targets": [{"expr": "clamp_min(rate(pipeline_kafka_topic_latest_offset[1m]) - rate(pipeline_spark_consumer_lag_total[1m]), 0)", "refId": "A"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {"mode": "fixed", "fixedColor": "#5794F2"}
+        }
+      },
+      "options": {"colorMode": "background", "graphMode": "area", "textMode": "value"}
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "Lag (messages)",
+      "description": "Total Kafka messages Spark hasn't consumed yet. Stable = healthy.",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 6},
+      "targets": [{"expr": "pipeline_spark_consumer_lag_total", "refId": "A"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green"},
+            {"color": "yellow", "value": 500000},
+            {"color": "red", "value": 5000000}
+          ]},
+          "color": {"mode": "thresholds"}
+        }
+      },
+      "options": {"colorMode": "background", "graphMode": "area"}
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "Lag (minutes)",
+      "description": "Estimated minutes for Spark to catch up at current consumer rate.",
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 6},
+      "targets": [{
+        "expr": "pipeline_spark_consumer_lag_total / clamp_min(rate(pipeline_kafka_topic_latest_offset[2m]) - rate(pipeline_spark_consumer_lag_total[2m]), 1) / 60",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "decimals": 1,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green"},
+            {"color": "yellow", "value": 1},
+            {"color": "red", "value": 10}
+          ]},
+          "color": {"mode": "thresholds"}
+        }
+      },
+      "options": {"colorMode": "background", "graphMode": "area"}
+    },
+
+    {
+      "type": "row",
+      "id": 3,
+      "title": "⚡ Throughput",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 10}
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Producer vs Consumer rate",
+      "description": "Divergence = lag growing. Convergence = lag stable.",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 11},
+      "targets": [
+        {"expr": "rate(pipeline_kafka_topic_latest_offset[1m])", "refId": "A", "legendFormat": "producer"},
+        {"expr": "clamp_min(rate(pipeline_kafka_topic_latest_offset[1m]) - rate(pipeline_spark_consumer_lag_total[1m]), 0)", "refId": "B", "legendFormat": "consumer"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "spanNulls": true}
+        }
+      }
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Lag over time",
+      "description": "Total backlog trend. Flat = healthy. Rising = bad.",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 11},
+      "targets": [{"expr": "pipeline_spark_consumer_lag_total", "refId": "A", "legendFormat": "lag"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 30},
+          "color": {"mode": "fixed", "fixedColor": "#F2495C"}
+        }
+      }
+    },
+
+    {
+      "type": "row",
+      "id": 4,
+      "title": "🫀 Pipeline Health",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 19}
+    },
+    {
+      "id": 40,
+      "type": "timeseries",
+      "title": "Spark batch duration",
+      "description": "How long each batch takes. Red = overrunning trigger (30s).",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+      "targets": [
+        {"expr": "{__name__=~\"metrics_app_.*_driver_spark_streaming_.*_triggerExecution_Value\"}", "refId": "A", "legendFormat": "batch duration (ms)"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 20},
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green"},
+            {"color": "yellow", "value": 30000},
+            {"color": "red", "value": 60000}
+          ]}
+        }
+      }
+    },
+    {
+      "id": 41,
+      "type": "timeseries",
+      "title": "Input rows per batch",
+      "description": "Rows processed in each Spark batch.",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+      "targets": [
+        {"expr": "{__name__=~\"metrics_app_.*_driver_spark_streaming_.*_inputRate_total_Value\"}", "refId": "A", "legendFormat": "input rows"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 20}
+        }
+      }
+    },
+    {
+      "id": 42,
+      "type": "timeseries",
+      "title": "Per-partition Kafka lag",
+      "description": "Imbalance here means one partition is hot or Spark is struggling with a specific partition.",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 28},
+      "targets": [
+        {"expr": "pipeline_spark_consumer_lag_per_partition", "refId": "A", "legendFormat": "partition {{partition}}"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 5}
+        }
+      }
+    },
+
+    {
+      "type": "row",
+      "id": 5,
+      "title": "🗄️ Hudi Lifecycle",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 36}
+    },
+    {
+      "id": 50,
+      "type": "timeseries",
+      "title": "Timeline events (cumulative)",
+      "description": "Deltacommits from streaming. Compactions merge logs to parquet. Cleans remove old files.",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 37},
+      "targets": [
+        {"expr": "pipeline_hudi_deltacommit_count", "refId": "A", "legendFormat": "deltacommits"},
+        {"expr": "pipeline_hudi_commit_count", "refId": "B", "legendFormat": "compactions"},
+        {"expr": "pipeline_hudi_clean_count", "refId": "C", "legendFormat": "cleans"}
+      ],
+      "fieldConfig": {
+        "defaults": {"custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 10}}
+      }
+    },
+    {
+      "id": 51,
+      "type": "timeseries",
+      "title": "Parquet base files vs log files",
+      "description": "Log files build up between compactions. Spikes in logs with no matching base = compaction lag.",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 37},
+      "targets": [
+        {"expr": "pipeline_hudi_base_files_total", "refId": "A", "legendFormat": "base parquets"},
+        {"expr": "pipeline_hudi_log_files_total", "refId": "B", "legendFormat": "log files"}
+      ],
+      "fieldConfig": {
+        "defaults": {"custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 20}}
+      }
+    },
+    {
+      "id": 52,
+      "type": "timeseries",
+      "title": "Hudi table size",
+      "description": "Total storage used. Spikes without cleaner activity = disk leak.",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 45},
+      "targets": [{"expr": "pipeline_hudi_table_size_bytes", "refId": "A", "legendFormat": "table size"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 20},
+          "color": {"mode": "fixed", "fixedColor": "#5794F2"}
+        }
+      }
+    },
+
+    {
+      "type": "row",
+      "id": 6,
+      "title": "💾 Spark Resources",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 53}
+    },
+    {
+      "id": 60,
+      "type": "timeseries",
+      "title": "Driver on-heap memory",
+      "description": "Spark driver memory usage. High = risk of OOM.",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 54},
+      "targets": [
+        {"expr": "{__name__=~\"metrics_app_.*_driver_BlockManager_memory_onHeapMemUsed_MB_Value\"}", "refId": "A", "legendFormat": "used MB"},
+        {"expr": "{__name__=~\"metrics_app_.*_driver_BlockManager_memory_maxOnHeapMem_MB_Value\"}", "refId": "B", "legendFormat": "max MB"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decmbytes",
+          "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 10}
+        }
+      }
+    },
+    {
+      "id": 61,
+      "type": "timeseries",
+      "title": "Kafka ingestion rate (msgs/sec)",
+      "description": "How fast Kafka is accepting writes. Drops here may signal Kafka pressure.",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 54},
+      "targets": [
+        {"expr": "rate(pipeline_kafka_topic_latest_offset[1m])", "refId": "A", "legendFormat": "Kafka rate"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 20}
+        }
+      }
+    }
+  ]
+}
