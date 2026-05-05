@@ -1,4 +1,4 @@
-# 🚀 Real-Time CDC Lakehouse Pipeline
+#  Real-Time CDC Lakehouse Pipeline
 
 A production-ready Change Data Capture pipeline that streams MySQL changes through Kafka into an Apache Hudi lakehouse — queryable via Trino SQL.
 
@@ -10,7 +10,7 @@ MySQL → Debezium → Kafka → Spark Streaming → Hudi (on S3/MinIO) → Trin
                     Prometheus + Grafana (monitoring & alerting)
 ```
 
-## ✨ Features
+##  Features
 
 - **Real-time CDC** — every MySQL INSERT/UPDATE/DELETE streams to the lakehouse in ~30 seconds
 - **Apache Hudi MOR** — Merge-On-Read with BUCKET index for O(1) upserts at scale
@@ -21,12 +21,12 @@ MySQL → Debezium → Kafka → Spark Streaming → Hudi (on S3/MinIO) → Trin
 - **Graceful shutdown** — SIGTERM completes the current batch before stopping
 - **Production-tuned** — tested at 50k+ msgs/sec sustained throughput
 
-## 📋 Prerequisites
+##  Prerequisites
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (4+ GB RAM allocated)
 - No other software needed — everything runs in containers
 
-## 🏁 Quick Start
+##  Quick Start
 
 ```bash
 # Clone the repo
@@ -51,7 +51,7 @@ That's it. The pipeline is now:
 3. Writing to Hudi on MinIO (S3-compatible storage)
 4. Queryable via Trino SQL
 
-## 🔍 Try It
+##  Try It
 
 ```bash
 # Update a shipment in MySQL
@@ -63,7 +63,7 @@ docker exec lakehouse-trino trino --execute \
   "SELECT tracking_id, status, current_location FROM lakehouse.default.shipments_mor_rt ORDER BY tracking_id"
 ```
 
-## 🖥️ Web UIs
+##  Web UIs
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
@@ -75,7 +75,7 @@ docker exec lakehouse-trino trino --execute \
 | Grafana | http://localhost:3000 | admin / admin |
 | Prometheus | http://localhost:9090 | — |
 
-## 🏗️ Architecture
+##  Architecture
 
 ```
 ┌──────────────┐     ┌───────────────┐     ┌─────────────┐     ┌──────────────────┐
@@ -98,7 +98,7 @@ docker exec lakehouse-trino trino --execute \
 └──────────────┘     └───────────────┘     └──────────────────────────────────────┘
 ```
 
-## 📁 Project Structure
+##  Project Structure
 
 ```
 ├── docker-compose.yml              # All 15 services orchestrated
@@ -144,7 +144,7 @@ docker exec lakehouse-trino trino --execute \
     └── wait-and-register.sh       # Debezium connector auto-registration
 ```
 
-## ⚙️ Configuration
+##  Configuration
 
 All settings are in `.env`. Key tuning knobs:
 
@@ -155,7 +155,7 @@ All settings are in `.env`. Key tuning knobs:
 | `SPARK_CORES_MAX` | 8 | Total Spark executor cores |
 | `SPARK_EXECUTOR_MEMORY` | 4g | Memory per executor |
 
-## 📊 Monitoring
+##  Monitoring
 
 ### Grafana Dashboard
 
@@ -234,7 +234,7 @@ Each `tracking_id` hashes to one of 16 deterministic buckets. Upserts are O(1) �
 - Spark → Hudi: `precombine` field (`ts`) ensures newer events always win
 - Result: even if a batch replays, the final state is identical
 
-## 🚀 Production Deployment (AWS)
+##  Production Deployment (AWS)
 
 | Local | AWS Equivalent |
 |-------|---------------|
@@ -246,6 +246,6 @@ Each `tracking_id` hashes to one of 16 deterministic buckets. Upserts are O(1) �
 | Trino | Amazon Athena |
 | Prometheus + Grafana | CloudWatch + Managed Grafana |
 
-## 📄 License
+##  License
 
-MIT
+
